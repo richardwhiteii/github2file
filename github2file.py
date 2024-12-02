@@ -306,6 +306,8 @@ Supported languages/categories:
         download_repo(args.repo_url, output_folder, args.lang,
                      args.keep_comments, args.branch_or_tag, args.claude)
         print(f"Processing complete. Files saved in the '{output_folder}' directory.")
+        # Print the output file path
+        print(f"Output file: {os.path.join(output_folder, args.repo_url.split('/')[-1])}_{'_'.join(args.lang)}.txt")
     except Exception as e:
         print(f"Error: {e}")
         sys.exit(1)
