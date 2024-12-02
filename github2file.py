@@ -23,18 +23,16 @@ def is_file_type(file_path: str, language: str) -> bool:
     return any(file_path.endswith(ext) for ext in extensions)
 
 def is_likely_useful_file(file_path, lang):
-    """Determine if the file is likely useful by applying various filters."""
-    excluded_dirs = ["examples", "tests", "test", "scripts", "utils", "benchmarks"]
-    utility_or_config_files = []
-    github_workflow_or_docs = [".github", ".gitignore", "LICENSE", "README"]
+    """Determine if the file is likely useful by applying filters."""
+    # Only exclude git-related and test files
+    excluded_dirs = ["tests", "test"]
+    github_workflow_or_docs = [".github", ".gitignore", "LICENSE"]
 
     if lang == "python":
         excluded_dirs.append("__pycache__")
-        utility_or_config_files.extend(["hubconf.py", "setup.py"])
         github_workflow_or_docs.extend(["stale.py", "gen-card-", "write_model_card"])
     elif lang == "go":
         excluded_dirs.append("vendor")
-        utility_or_config_files.extend(["go.mod", "go.sum", "Makefile"])
 
     if any(part.startswith('.') for part in file_path.split('/')):
         return False
@@ -42,9 +40,6 @@ def is_likely_useful_file(file_path, lang):
         return False
     for excluded_dir in excluded_dirs:
         if f"/{excluded_dir}/" in file_path or file_path.startswith(excluded_dir + "/"):
-            return False
-    for file_name in utility_or_config_files:
-        if file_name in file_path:
             return False
     for doc_file in github_workflow_or_docs:
         if doc_file in file_path:
@@ -81,7 +76,7 @@ def download_repo(repo_url, output_folder, lang, keep_comments=False, branch_or_
 
     print(f"Downloading from: {download_url}")
     response = requests.get(download_url)
-    response.raise_for_status()  # Raise an exception for non-200 status codes
+    response.raise_for_status()
 
     try:
         zip_file = zipfile.ZipFile(io.BytesIO(response.content))
@@ -95,52 +90,62 @@ def download_repo(repo_url, output_folder, lang, keep_comments=False, branch_or_
         output_file = os.path.join(output_folder, f"{repo_name}_{lang}-claude.txt")
 
     with open(output_file, "w", encoding="utf-8") as outfile:
-        # Include the README file
-        readme_file_path, readme_content = find_readme_content(zip_file)
-
         if claude and isinstance(claude, bool):
             outfile.write("Here are some documents for you to reference for your task:\n\n")
             outfile.write("<documents>\n")
 
+            # Create file structure as document index 0
             outfile.write("<document index=\"0\">\n")
+            outfile.write("<source>file_structure.txt</source>\n")
+            outfile.write("<document_content>\n")
+            outfile.write("Repository File Structure:\n")
+            outfile.write("========================\n\n")
+            
+            # List all files in the repository
+            for file_path in sorted(zip_file.namelist()):
+                if not file_path.endswith('/'):  # Skip directory entries
+                    outfile.write(f"{file_path}\n")
+            
+            outfile.write("</document_content>\n")
+            outfile.write("</document>\n\n")
+
+            # Include the README file as document index 1
+            readme_file_path, readme_content = find_readme_content(zip_file)
+            outfile.write("<document index=\"1\">\n")
             outfile.write(f"<source>{readme_file_path}</source>\n")
             outfile.write(f"<document_content>\n{readme_content}\n</document_content>\n")
             outfile.write("</document>\n\n")
-        else:
-            outfile.write(f"{'// ' if lang == 'go' else '# '}File: {readme_file_path}\n")
-            outfile.write(readme_content)
-            outfile.write("\n\n")
 
-        index = 1
-        for file_path in zip_file.namelist():
-            # Skip directories, non-language files, less likely useful files, hidden directories, and test files
-            if file_path.endswith("/") or not is_file_type(file_path, lang) or not is_likely_useful_file(file_path, lang):
-                continue
+            # Process remaining files
+            index = 2
+            for file_path in zip_file.namelist():
+                # Skip directories and non-language files
+                if file_path.endswith("/") or not is_file_type(file_path, lang) or not is_likely_useful_file(file_path, lang):
+                    continue
 
-            try:
-                file_content = zip_file.read(file_path).decode("utf-8", errors="replace")
-            except UnicodeDecodeError:
-                print(f"Warning: Skipping file {file_path} due to decoding error.")
-                continue
+                try:
+                    file_content = zip_file.read(file_path).decode("utf-8", errors="replace")
+                except UnicodeDecodeError:
+                    print(f"Warning: Skipping file {file_path} due to decoding error.")
+                    continue
 
-            # Skip test files based on content and files with insufficient substantive content
-            if is_test_file(file_content, lang) or not has_sufficient_content(file_content):
-                continue
-            if lang == "python" and not keep_comments:
-                file_content = remove_comments_and_docstrings(file_content)
+                # Skip test files based on content
+                if is_test_file(file_content, lang):
+                    continue
 
-            if claude and isinstance(claude, bool):
+                if lang == "python" and not keep_comments:
+                    try:
+                        file_content = remove_comments_and_docstrings(file_content)
+                    except:
+                        # If comment removal fails, keep original content
+                        pass
+
                 outfile.write(f"<document index=\"{index}\">\n")
                 outfile.write(f"<source>{file_path}</source>\n")
                 outfile.write(f"<document_content>\n{file_content}\n</document_content>\n")
                 outfile.write("</document>\n\n")
                 index += 1
-            else:
-                outfile.write(f"{'// ' if lang == 'go' else '# '}File: {file_path}\n")
-                outfile.write(file_content)
-                outfile.write("\n\n")
 
-        if claude and isinstance(claude, bool):
             outfile.write("</documents>")
 
 def find_readme_content(zip_file):
