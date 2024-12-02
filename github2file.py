@@ -230,6 +230,43 @@ def download_repo(repo_url: str, output_folder: str, languages: List[str],
                     except UnicodeDecodeError:
                         print(f"Warning: Skipping file {file_path} due to decoding error.")
 
+def find_readme_content(zip_file):
+    """
+    Recursively search for the README file within the ZIP archive and return its content and file path.
+    """
+    readme_file_path = ""
+    readme_content = ""
+    
+    # Try different README file patterns
+    readme_patterns = [
+        "/README.md",
+        "README.md",
+        "/README",
+        "README",
+        "/Readme.md",
+        "Readme.md",
+        "/readme.md",
+        "readme.md"
+    ]
+
+    # First try to find a markdown README
+    for file_path in zip_file.namelist():
+        for pattern in readme_patterns:
+            if file_path.endswith(pattern):
+                try:
+                    readme_content = zip_file.read(file_path).decode("utf-8", errors="replace")
+                    readme_file_path = file_path
+                    return readme_file_path, readme_content
+                except UnicodeDecodeError:
+                    print(f"Warning: Skipping README file {file_path} due to decoding error.")
+
+    # If no README is found
+    if not readme_content:
+        readme_content = "No README file found in the repository."
+        readme_file_path = "README.md"
+
+    return readme_file_path, readme_content
+
 def main():
     parser = argparse.ArgumentParser(
         description='Download and process files from a GitHub repository.',
