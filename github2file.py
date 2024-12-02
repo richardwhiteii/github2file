@@ -5,74 +5,144 @@ import zipfile
 import io
 import ast
 import argparse
-from typing import List
+from typing import List, Set
 
 def get_language_extensions(language: str) -> List[str]:
-    """Return a list of file extensions for the specified programming language."""
+    """Return a list of file extensions for the specified programming language/category."""
     language_extensions = {
-        "python": [".py", ".pyw"],  # Add .ipynb extension for Python notebooks
-        #TODO convert python notebooks to python files or some format that allow conversion between notebook and python file.
-        "go": [".go"],
-        "md": [".md"],  # Markdown files
+        # Python-related files
+        "python": [
+            ".py", ".pyw", ".pyc", ".pyo", ".pyd",  # Python source and compiled
+            ".ipynb",  # Jupyter notebooks
+            ".pyx", ".pxd",  # Cython
+            ".cfg", ".ini",  # Configuration
+            ".toml",  # Project configuration (pyproject.toml)
+            ".requirements.txt", ".constraints.txt",  # Dependencies
+            ".jinja", ".jinja2", ".j2",  # Templates
+        ],
+        
+        # Web development
+        "web": [
+            ".html", ".htm", ".xhtml",  # HTML
+            ".css", ".scss", ".sass", ".less",  # Stylesheets
+            ".js", ".jsx", ".ts", ".tsx",  # JavaScript/TypeScript
+            ".vue", ".svelte",  # Component frameworks
+            ".json", ".jsonld",  # JSON files
+            ".xml", ".xsl", ".xslt",  # XML files
+            ".wasm",  # WebAssembly
+        ],
+        
+        # Documentation and text
+        "docs": [
+            ".md", ".markdown", ".mdown",  # Markdown
+            ".rst", ".asciidoc", ".adoc",  # Other doc formats
+            ".txt", ".text",  # Plain text
+            ".pdf", ".doc", ".docx",  # Rich documents
+            ".yaml", ".yml",  # YAML files
+        ],
+        
+        # Go-related files
+        "go": [
+            ".go", ".mod", ".sum",  # Go source and modules
+            ".tmpl", ".gohtml",  # Go templates
+        ],
+        
+        # Java/JVM languages
+        "java": [
+            ".java", ".class", ".jar",  # Java
+            ".kt", ".kts",  # Kotlin
+            ".scala", ".sc",  # Scala
+            ".gradle", ".groovy",  # Gradle/Groovy
+            ".clj", ".cljs",  # Clojure
+        ],
+        
+        # C-family languages
+        "c": [
+            ".c", ".h",  # C
+            ".cpp", ".hpp", ".cc", ".hh", ".cxx", ".hxx",  # C++
+            ".m", ".mm",  # Objective-C
+        ],
+        
+        # Shell and scripting
+        "shell": [
+            ".sh", ".bash", ".zsh", ".fish",  # Shell scripts
+            ".ps1", ".psm1", ".psd1",  # PowerShell
+            ".bat", ".cmd", ".btm",  # Windows batch
+        ],
+        
+        # Configuration and data
+        "config": [
+            ".env", ".env.*",  # Environment variables
+            ".conf", ".config",  # Configuration files
+            ".ini", ".cfg",  # INI files
+            ".properties",  # Properties files
+            ".json", ".yaml", ".yml", ".toml", ".xml",  # Structured data
+            ".lock", ".lock.*",  # Lock files
+            ".dockerfile", "Dockerfile.*",  # Docker
+            "Makefile", ".mk",  # Make
+            ".editorconfig", ".gitignore", ".gitattributes",  # Tool config
+        ],
+        
+        "all": []  # Special category that includes all file types
     }
-    return language_extensions[language.lower()]
+    
+    # For 'all' category, combine all extensions
+    if language.lower() == 'all':
+        all_extensions = set()
+        for extensions in language_extensions.values():
+            all_extensions.update(extensions)
+        return list(all_extensions)
+    
+    return language_extensions.get(language.lower(), [])
 
-def is_file_type(file_path: str, language: str) -> bool:
-    """Check if the file has a valid extension for the specified language."""
-    extensions = get_language_extensions(language)
-    return any(file_path.endswith(ext) for ext in extensions)
+def get_all_supported_languages() -> List[str]:
+    """Return a list of all supported language/category names."""
+    return [
+        "python", "web", "docs", "go", "java", "c", "shell", 
+        "config", "all"
+    ]
 
-def is_likely_useful_file(file_path, lang):
+def is_file_type(file_path: str, languages: List[str]) -> bool:
+    """Check if the file has a valid extension for any of the specified languages."""
+    all_extensions = set()
+    for lang in languages:
+        all_extensions.update(get_language_extensions(lang))
+    
+    # Handle files without extensions
+    if '.' not in file_path:
+        return os.path.basename(file_path) in ['Makefile', 'Dockerfile']
+    
+    # Check if the file matches any of the extensions
+    return any(file_path.endswith(ext) for ext in all_extensions)
+
+def is_likely_useful_file(file_path: str) -> bool:
     """Determine if the file is likely useful by applying filters."""
-    # Only exclude git-related and test files
-    excluded_dirs = ["tests", "test"]
-    github_workflow_or_docs = [".github", ".gitignore", "LICENSE"]
-
-    if lang == "python":
-        excluded_dirs.append("__pycache__")
-        github_workflow_or_docs.extend(["stale.py", "gen-card-", "write_model_card"])
-    elif lang == "go":
-        excluded_dirs.append("vendor")
-
+    excluded_dirs = ["__pycache__", "node_modules"]
+    
+    # Skip hidden files/directories unless they're common config files
     if any(part.startswith('.') for part in file_path.split('/')):
-        return False
-    if 'test' in file_path.lower():
-        return False
+        allowed_dotfiles = ['.gitignore', '.env', '.dockerignore', '.editorconfig']
+        if not any(file_path.endswith(dotfile) for dotfile in allowed_dotfiles):
+            return False
+    
+    # Skip excluded directories
     for excluded_dir in excluded_dirs:
         if f"/{excluded_dir}/" in file_path or file_path.startswith(excluded_dir + "/"):
             return False
-    for doc_file in github_workflow_or_docs:
-        if doc_file in file_path:
-            return False
+            
     return True
 
-def is_test_file(file_content, lang):
-    """Determine if the file content suggests it is a test file."""
-    test_indicators = {
-        "python": ["import unittest", "import pytest", "from unittest", "from pytest"],
-        "go": ["import testing", "func Test"]
-    }
-    indicators = test_indicators.get(lang, [])
-    return any(indicator in file_content for indicator in indicators)
-
-def has_sufficient_content(file_content, min_line_count=10):
-    """Check if the file has a minimum number of substantive lines."""
-    lines = [line for line in file_content.split('\n') if line.strip() and not line.strip().startswith(('#', '//'))]
-    return len(lines) >= min_line_count
-
-def remove_comments_and_docstrings(source):
-    """Remove comments and docstrings from the Python source code."""
-    tree = ast.parse(source)
-    for node in ast.walk(tree):
-        if isinstance(node, (ast.FunctionDef, ast.ClassDef, ast.AsyncFunctionDef)) and ast.get_docstring(node):
-            node.body = node.body[1:]  # Remove docstring
-        elif isinstance(node, ast.Expr) and isinstance(node.value, ast.Str):
-            node.value.s = ""  # Remove comments
-    return ast.unparse(tree)
-
-def download_repo(repo_url, output_folder, lang, keep_comments=False, branch_or_tag="master", claude=False):
+def download_repo(repo_url: str, output_folder: str, languages: List[str], 
+                 keep_comments: bool = False, branch_or_tag: str = "master",
+                 claude: bool = False) -> None:
     """Download and process files from a GitHub repository."""
-    download_url = f"{repo_url}/archive/refs/heads/{branch_or_tag}.zip"
+    # Convert repo URL to API format if needed
+    if repo_url.endswith("/"):
+        repo_url = repo_url[:-1]
+    if repo_url.startswith("https://github.com/"):
+        repo_url = repo_url[len("https://github.com/"):]
+    
+    download_url = f"https://github.com/{repo_url}/archive/refs/heads/{branch_or_tag}.zip"
 
     print(f"Downloading from: {download_url}")
     response = requests.get(download_url)
@@ -85,31 +155,33 @@ def download_repo(repo_url, output_folder, lang, keep_comments=False, branch_or_
         sys.exit(1)
 
     repo_name = repo_url.split('/')[-1]
-    output_file = os.path.join(output_folder, f"{repo_name}_{lang}.txt")
+    lang_str = "_".join(languages)
+    output_file = os.path.join(output_folder, f"{repo_name}_{lang_str}.txt")
     if claude:
-        output_file = os.path.join(output_folder, f"{repo_name}_{lang}-claude.txt")
+        output_file = os.path.join(output_folder, f"{repo_name}_{lang_str}-claude.txt")
 
     with open(output_file, "w", encoding="utf-8") as outfile:
-        if claude and isinstance(claude, bool):
+        if claude:
             outfile.write("Here are some documents for you to reference for your task:\n\n")
             outfile.write("<documents>\n")
 
-            # Create file structure as document index 0
+            # File structure (index 0)
             outfile.write("<document index=\"0\">\n")
             outfile.write("<source>file_structure.txt</source>\n")
             outfile.write("<document_content>\n")
             outfile.write("Repository File Structure:\n")
             outfile.write("========================\n\n")
             
-            # List all files in the repository
+            # List all files that match the requested languages
             for file_path in sorted(zip_file.namelist()):
                 if not file_path.endswith('/'):  # Skip directory entries
-                    outfile.write(f"{file_path}\n")
+                    if is_file_type(file_path, languages):
+                        outfile.write(f"{file_path}\n")
             
             outfile.write("</document_content>\n")
             outfile.write("</document>\n\n")
 
-            # Include the README file as document index 1
+            # README file (index 1)
             readme_file_path, readme_content = find_readme_content(zip_file)
             outfile.write("<document index=\"1\">\n")
             outfile.write(f"<source>{readme_file_path}</source>\n")
@@ -118,9 +190,10 @@ def download_repo(repo_url, output_folder, lang, keep_comments=False, branch_or_
 
             # Process remaining files
             index = 2
-            for file_path in zip_file.namelist():
-                # Skip directories and non-language files
-                if file_path.endswith("/") or not is_file_type(file_path, lang) or not is_likely_useful_file(file_path, lang):
+            for file_path in sorted(zip_file.namelist()):
+                if (file_path.endswith("/") or 
+                    not is_file_type(file_path, languages) or 
+                    not is_likely_useful_file(file_path)):
                     continue
 
                 try:
@@ -129,16 +202,12 @@ def download_repo(repo_url, output_folder, lang, keep_comments=False, branch_or_
                     print(f"Warning: Skipping file {file_path} due to decoding error.")
                     continue
 
-                # Skip test files based on content
-                if is_test_file(file_content, lang):
-                    continue
-
-                if lang == "python" and not keep_comments:
+                # Remove comments only from Python files if requested
+                if file_path.endswith('.py') and not keep_comments:
                     try:
                         file_content = remove_comments_and_docstrings(file_content)
                     except:
-                        # If comment removal fails, keep original content
-                        pass
+                        pass  # Keep original content if comment removal fails
 
                 outfile.write(f"<document index=\"{index}\">\n")
                 outfile.write(f"<source>{file_path}</source>\n")
@@ -147,69 +216,62 @@ def download_repo(repo_url, output_folder, lang, keep_comments=False, branch_or_
                 index += 1
 
             outfile.write("</documents>")
+        else:
+            # Non-Claude format output
+            for file_path in sorted(zip_file.namelist()):
+                if (not file_path.endswith("/") and 
+                    is_file_type(file_path, languages) and 
+                    is_likely_useful_file(file_path)):
+                    try:
+                        file_content = zip_file.read(file_path).decode("utf-8", errors="replace")
+                        outfile.write(f"# File: {file_path}\n")
+                        outfile.write(file_content)
+                        outfile.write("\n\n")
+                    except UnicodeDecodeError:
+                        print(f"Warning: Skipping file {file_path} due to decoding error.")
 
-def find_readme_content(zip_file):
-    """
-    Recursively search for the README file within the ZIP archive and return its content and file path.
-    """
-    readme_file_path = ""
-    readme_content = ""
-    for file_path in zip_file.namelist():
-        if file_path.endswith("/README.md") or file_path == "README.md":
-            try:
-                readme_content = zip_file.read(file_path).decode("utf-8", errors="replace")
-                readme_file_path = file_path
-                break
-            except UnicodeDecodeError:
-                print(f"Warning: Skipping README.md file due to decoding error.")
-
-    if not readme_content:
-        for file_path in zip_file.namelist():
-            if file_path.endswith("/README") or file_path == "README":
-                try:
-                    readme_content = zip_file.read(file_path).decode("utf-8", errors="replace")
-                    readme_file_path = file_path
-                    break
-                except UnicodeDecodeError:
-                    print(f"Warning: Skipping README file due to decoding error.")
-
-    if not readme_content:
-        readme_content = "No README file found in the repository."
-
-    return readme_file_path, readme_content
-
-def print_usage():
-    print("Usage: python github2file.py <repo_url> [--lang <language>] [--keep-comments] [--branch_or_tag <branch_or_tag>] [--claude]")
-    print("Options:")
-    print("  <repo_url>               The URL of the GitHub repository")
-    print("  --lang <language>        The programming language of the repository (choices: go, python, md). Default: python")
-    print("  --keep-comments          Keep comments and docstrings in the source code (only applicable for Python)")
-    print("  --branch_or_tag <branch_or_tag>  The branch or tag of the repository to download. Default: master")
-    print("  --claude                 Format the output for Claude with document tags")
-
-if __name__ == "__main__":
-    if len(sys.argv) < 2:
-        print("Error: Repository URL is required.")
-        print_usage()
-        sys.exit(1)
-
-    parser = argparse.ArgumentParser(description='Download and process files from a GitHub repository.')
-    parser.add_argument('repo_url', type=str, help='The URL of the GitHub repository')
-    parser.add_argument('--lang', type=str, choices=['go', 'python', 'md'], default='python', help='The programming language of the repository')
-    parser.add_argument('--keep-comments', action='store_true', help='Keep comments and docstrings in the source code (only applicable for Python)')
-    parser.add_argument('--branch_or_tag', type=str, help='The branch or tag of the repository to download', default="master")
-    parser.add_argument('--claude', action='store_true', help='Format the output for Claude with document tags')
-
+def main():
+    parser = argparse.ArgumentParser(
+        description='Download and process files from a GitHub repository.',
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  Download Python files:
+    python github2file.py username/repo --lang python
+    
+  Download multiple types:
+    python github2file.py username/repo --lang python web docs
+    
+  Download all supported file types:
+    python github2file.py username/repo --lang all
+    
+Supported languages/categories:
+  """ + ", ".join(get_all_supported_languages())
+    )
+    
+    parser.add_argument('repo_url', type=str, help='The URL or path of the GitHub repository')
+    parser.add_argument('--lang', nargs='+', default=['all'], 
+                        choices=get_all_supported_languages(),
+                        help='One or more language/category to process')
+    parser.add_argument('--keep-comments', action='store_true',
+                        help='Keep comments and docstrings in Python files')
+    parser.add_argument('--branch_or_tag', type=str, default="master",
+                        help='The branch or tag to download')
+    parser.add_argument('--claude', action='store_true',
+                        help='Format output for Claude with document tags')
+    
     args = parser.parse_args()
+    
     output_folder = "repos"
     os.makedirs(output_folder, exist_ok=True)
-    output_file_base = f"{args.repo_url.split('/')[-1]}_{args.lang}.txt"
-    output_file = output_file_base if not args.claude else f"{output_file_base}-claude.txt"
-
+    
     try:
-        download_repo(args.repo_url, output_folder, args.lang, args.keep_comments, args.branch_or_tag, args.claude)
+        download_repo(args.repo_url, output_folder, args.lang,
+                     args.keep_comments, args.branch_or_tag, args.claude)
+        print(f"Processing complete. Files saved in the '{output_folder}' directory.")
     except Exception as e:
         print(f"Error: {e}")
         sys.exit(1)
 
-    print(f"Combined {args.lang.capitalize()} source code saved to repos/{output_file}")
+if __name__ == "__main__":
+    main()
