@@ -1,3 +1,9 @@
+#!/usr/bin/env python3
+"""
+Enhanced github2file tool with LLM analysis capabilities.
+Original functionality preserved with additional LLM-powered repository analysis.
+"""
+
 import os
 import sys
 import requests
@@ -5,17 +11,21 @@ import zipfile
 import io
 import ast
 import argparse
-from typing import List
+import asyncio
+from typing import List, Optional
+from datetime import datetime
+import json
+import xml.etree.ElementTree as ET
+from llm_analyzer import LLMAnalyzer
 
 def get_language_extensions(language: str) -> List[str]:
     """Return a list of file extensions for the specified programming language."""
     language_extensions = {
-        "python": [".py", ".pyw"],  # Add .ipynb extension for Python notebooks
-        #TODO convert python notebooks to python files or some format that allow conversion between notebook and python file.
+        "python": [".py", ".pyw"],
         "go": [".go"],
         "javascript": [".js", ".jsx", ".ts", ".tsx"],
         "java": [".java"],
-        "md": [".md"],  # Add .md extension for Markdown files
+        "md": [".md"],
     }
     return language_extensions[language.lower()]
 
@@ -72,13 +82,13 @@ def remove_comments_and_docstrings(source):
     tree = ast.parse(source)
     for node in ast.walk(tree):
         if isinstance(node, (ast.FunctionDef, ast.ClassDef, ast.AsyncFunctionDef)) and ast.get_docstring(node):
-            node.body = node.body[1:]  # Remove docstring
+            node.body = node.body[1:]
         elif isinstance(node, ast.Expr) and isinstance(node.value, ast.Constant):
-            node.value.value = ""  # Remove comments
+            node.value.value = ""
     return ast.unparse(tree)
 
 def construct_download_url(repo_url, branch_or_tag):
-    """Construct the appropriate download URL for GitHub or GitLab based on the provided URL."""
+    """Construct the appropriate download URL for GitHub or GitLab."""
     if "github.com" in repo_url:
         return f"{repo_url}/archive/refs/heads/{branch_or_tag}.zip"
     elif "gitlab.com" in repo_url:
@@ -87,8 +97,48 @@ def construct_download_url(repo_url, branch_or_tag):
     else:
         raise ValueError("Unsupported repository URL. Only GitHub and GitLab URLs are supported.")
 
+async def process_with_llm(repo_url: str, output_file: str, args) -> None:
+    """Process repository using LLM analysis."""
+    analyzer = LLMAnalyzer(repo_url, args.verbose)
+    
+    try:
+        results = await analyzer.analyze(dry_run=args.dry_run)
+        
+        # Save results based on format preference
+        if args.format == 'json':
+            with open(output_file, 'w') as f:
+                json.dump(results, f, indent=2)
+        else:  # XML format
+            root = ET.Element('repository')
+            # Convert dict to XML structure
+            def dict_to_xml(parent, data):
+                for key, value in data.items():
+                    child = ET.SubElement(parent, key)
+                    if isinstance(value, dict):
+                        dict_to_xml(child, value)
+                    elif isinstance(value, list):
+                        for item in value:
+                            if isinstance(item, dict):
+                                item_elem = ET.SubElement(child, 'item')
+                                dict_to_xml(item_elem, item)
+                            else:
+                                ET.SubElement(child, 'item').text = str(item)
+                    else:
+                        child.text = str(value)
+            
+            dict_to_xml(root, results)
+            tree = ET.ElementTree(root)
+            tree.write(output_file, encoding='utf-8', xml_declaration=True)
+        
+        print(f"Analysis complete. Results saved to {output_file}")
+        
+    except Exception as e:
+        print(f"Error during LLM analysis: {str(e)}")
+        sys.exit(1)
+
 def download_repo(repo_url, output_file, lang, keep_comments=False, branch_or_tag="main", token=None, claude=False):
     """Download and process files from a GitHub or GitLab repository."""
+    # Original download_repo implementation remains unchanged
     download_url = construct_download_url(repo_url, branch_or_tag)
     headers = {}
 
@@ -98,7 +148,7 @@ def download_repo(repo_url, output_file, lang, keep_comments=False, branch_or_ta
         elif "github.com" in repo_url:
             headers['Authorization'] = f'token {token}'
 
-    print(download_url)
+    print(f"Downloading from: {download_url}")
     response = requests.get(download_url, headers=headers)
 
     try:
@@ -200,23 +250,59 @@ def print_usage():
     print("  --branch_or_tag <branch_or_tag>  The branch or tag of the repository to download. Default: master")
     print("  --claude                 Format the output for Claude with document tags")
 
-if __name__ == "__main__":
 
-    parser = argparse.ArgumentParser(description='Download and process files from a GitHub or GitLab repository.')
+def main():
+    """Main entry point with enhanced argument parsing."""
+    parser = argparse.ArgumentParser(description='Download and analyze GitHub/GitLab repositories with optional LLM processing.')
     parser.add_argument('repo_url', type=str, help='The URL of the GitHub or GitLab repository')
-    parser.add_argument('--lang', type=str, choices=['go', 'python', 'md'], default='python', help='The programming language of the repository')
-    parser.add_argument('--keep-comments', action='store_true', help='Keep comments and docstrings in the source code (only applicable for Python)')
-    parser.add_argument('--branch_or_tag', type=str, help='The branch or tag of the repository to download', default="main")
-    parser.add_argument('--token', type=str, help='Personal access token for private repositories', default=None)
-    parser.add_argument('--claude', action='store_true', help='Format the output for Claude with document tags')
+    
+    # Original arguments
+    parser.add_argument('--lang', type=str, choices=['go', 'python', 'md'], default='python',
+                      help='The programming language of the repository')
+    parser.add_argument('--keep-comments', action='store_true',
+                      help='Keep comments and docstrings in the source code (only applicable for Python)')
+    parser.add_argument('--branch_or_tag', type=str, default="main",
+                      help='The branch or tag of the repository to download')
+    parser.add_argument('--token', type=str, help='Personal access token for private repositories')
+    parser.add_argument('--claude', action='store_true',
+                      help='Format the output for Claude with document tags')
+    
+    # New LLM-related arguments
+    parser.add_argument('--llm', action='store_true',
+                      help='Enable LLM analysis of the repository')
+    parser.add_argument('--format', choices=['xml', 'json'], default='xml',
+                      help='Output format for LLM analysis results')
+    parser.add_argument('--dry-run', action='store_true',
+                      help='Show analysis plan without execution')
+    parser.add_argument('--verbose', type=int, choices=[0, 1, 2, 3], default=1,
+                      help='Verbosity level (0=quiet, 1=normal, 2=verbose, 3=debug)')
 
     args = parser.parse_args()
+
+    # Create output directory if it doesn't exist
     output_folder = "repos"
     os.makedirs(output_folder, exist_ok=True)
-    output_file_base = f"{args.repo_url.split('/')[-1]}_{args.lang}.txt"
-    output_file = output_file_base if not args.claude else f"{output_file_base}-claude.txt"
 
-    download_repo(repo_url=args.repo_url, output_file=output_folder, lang=args.lang, keep_comments=args.keep_comments, branch_or_tag=args.branch_or_tag, token=args.token, claude=args.claude)
+    # Determine output filename based on processing mode
+    base_filename = f"{args.repo_url.split('/')[-1]}_{args.lang}"
+    if args.llm:
+        output_file = os.path.join(output_folder, f"{base_filename}_llm.{args.format}")
+        asyncio.run(process_with_llm(args.repo_url, output_file, args))
+    else:
+        output_file = os.path.join(output_folder, f"{base_filename}.txt")
+        if args.claude:
+            output_file = output_file.replace('.txt', '-claude.txt')
+        download_repo(
+            repo_url=args.repo_url,
+            output_file=output_folder,
+            lang=args.lang,
+            keep_comments=args.keep_comments,
+            branch_or_tag=args.branch_or_tag,
+            token=args.token,
+            claude=args.claude
+        )
 
-    print(f"Combined {args.lang.capitalize()} source code saved to {output_file}")
+    print(f"Processing complete. Output saved to {output_file}")
 
+if __name__ == "__main__":
+    main()
