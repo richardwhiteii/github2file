@@ -202,36 +202,36 @@ class LLMAnalyzer:
     def __init__(self, repository_url: str, verbose_level: int = 1):
         self.repository_url = repository_url
         self.verbose_level = verbose_level
-        self.client = anthropic.Client(api_key=os.getenv('ANTHROPIC_API_KEY'))
+        api_key = os.getenv('ANTHROPIC_API_KEY')
+        if not api_key:
+            raise ValueError("ANTHROPIC_API_KEY environment variable not set")
+        self.client = anthropic.Client(api_key=api_key)
         
     def analyze(self, dry_run: bool = False) -> Dict:
         try:
-            # Simple test analysis
-            prompt = f"""Please output a valid JSON object with this structure:
-            {{
-                "repository": "{self.repository_url}",
-                "analysis": {{
-                    "components": [],
-                    "dependencies": []
-                }}
-            }}"""
-            
+            if dry_run:
+                return {"repository": self.repository_url, "status": "dry_run"}
+                
+            message = f"Analyze the repository at {self.repository_url} and provide a structured analysis."
             response = self.client.messages.create(
-                model="claude-3-5-sonnet-latest",
+                model="claude-3-sonnet-20240229",
                 max_tokens=4096,
-                messages=[{"role": "user", "content": prompt}]
+                messages=[{"role": "user", "content": message}]
             )
             
-            result = response.content[0].text
-            print(f"Raw response: {result}")  # Debug print
-            
-            return json.loads(result)
+            analysis = {
+                "repository": self.repository_url,
+                "timestamp": datetime.now().isoformat(),
+                "analysis": response.content[0].text
+            }
+            return analysis
             
         except Exception as e:
-            print(f"Error: {str(e)}")  # Debug print
+            print(f"Analysis error: {str(e)}")
             return {
                 "error": str(e),
-                "repository": self.repository_url
+                "repository": self.repository_url,
+                "timestamp": datetime.now().isoformat()
             }
         
     def _generate_artifact(self, results: Dict) -> Dict:
