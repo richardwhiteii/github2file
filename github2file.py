@@ -238,62 +238,52 @@ def print_usage():
     print("  --branch_or_tag <branch_or_tag>  The branch or tag of the repository to download. Default: master")
     print("  --claude                 Format the output for Claude with document tags")
 
-
+def dict_to_xml(parent, data):
+    """Convert dictionary to XML structure."""
+    for key, value in data.items():
+        child = ET.SubElement(parent, key)
+        if isinstance(value, dict):
+            dict_to_xml(child, value)
+        elif isinstance(value, list):
+            for item in value:
+                if isinstance(item, dict):
+                    item_elem = ET.SubElement(child, 'item')
+                    dict_to_xml(item_elem, item)
+                else:
+                    ET.SubElement(child, 'item').text = str(item)
+        else:
+            child.text = str(value)
+            
 def main():
+    parser = argparse.ArgumentParser(description='Download and analyze GitHub/GitLab repositories')
+    parser.add_argument('repo_url', type=str, help='Repository URL')
+    parser.add_argument('--lang', choices=['go', 'python', 'md'], default='python')
+    parser.add_argument('--keep-comments', action='store_true')
+    parser.add_argument('--branch_or_tag', type=str, default="main")
+    parser.add_argument('--token', type=str)
+    parser.add_argument('--claude', action='store_true')
+    parser.add_argument('--llm', action='store_true')
+    parser.add_argument('--format', choices=['xml', 'json'], default='xml')
+    parser.add_argument('--dry-run', action='store_true')
+    parser.add_argument('--verbose', type=int, choices=[0,1,2,3], default=1)
+    
+    args = parser.parse_args()
+    output_folder = "repos"
+    os.makedirs(output_folder, exist_ok=True)
+    
+    base_filename = f"{args.repo_url.split('/')[-1]}_{args.lang}"
+    
     if args.llm:
         output_file = os.path.join(output_folder, f"{base_filename}_llm.{args.format}")
-        process_with_llm(args.repo_url, output_file, args)  # Remove asyncio.run
-    else:    
-        # Create output directory if it doesn't exist
-        output_folder = "repos"
-        os.makedirs(output_folder, exist_ok=True)
-        """Main entry point with enhanced argument parsing."""
-        parser = argparse.ArgumentParser(description='Download and analyze GitHub/GitLab repositories with optional LLM processing.')
-        parser.add_argument('repo_url', type=str, help='The URL of the GitHub or GitLab repository')
-        
-        # Original arguments
-        parser.add_argument('--lang', type=str, choices=['go', 'python', 'md'], default='python',
-                        help='The programming language of the repository')
-        parser.add_argument('--keep-comments', action='store_true',
-                        help='Keep comments and docstrings in the source code (only applicable for Python)')
-        parser.add_argument('--branch_or_tag', type=str, default="main",
-                        help='The branch or tag of the repository to download')
-        parser.add_argument('--token', type=str, help='Personal access token for private repositories')
-        parser.add_argument('--claude', action='store_true',
-                        help='Format the output for Claude with document tags')
-        
-        # New LLM-related arguments
-        parser.add_argument('--llm', action='store_true',
-                        help='Enable LLM analysis of the repository')
-        parser.add_argument('--format', choices=['xml', 'json'], default='xml',
-                        help='Output format for LLM analysis results')
-        parser.add_argument('--dry-run', action='store_true',
-                        help='Show analysis plan without execution')
-        parser.add_argument('--verbose', type=int, choices=[0, 1, 2, 3], default=1,
-                        help='Verbosity level (0=quiet, 1=normal, 2=verbose, 3=debug)')
+        process_with_llm(args.repo_url, output_file, args)
+    else:
+        output_file = os.path.join(output_folder, f"{base_filename}.txt")
+        if args.claude:
+            output_file = output_file.replace('.txt', '-claude.txt')
+        download_repo(repo_url=args.repo_url, output_folder=output_folder, lang=args.lang,
+                     branch_or_tag=args.branch_or_tag, token=args.token, claude=args.claude)
 
-        args = parser.parse_args()
-
-        # Determine output filename based on processing mode
-        base_filename = f"{args.repo_url.split('/')[-1]}_{args.lang}"
-        if args.llm:
-            output_file = os.path.join(output_folder, f"{base_filename}_llm.{args.format}")
-            asyncio.run(process_with_llm(args.repo_url, output_file, args))
-        else:
-            output_file = os.path.join(output_folder, f"{base_filename}.txt")
-            if args.claude:
-                output_file = output_file.replace('.txt', '-claude.txt')
-            download_repo(
-                repo_url=args.repo_url,
-                output_folder=output_folder,
-                lang=args.lang,
-                #keep_comments=args.keep_comments,
-                branch_or_tag=args.branch_or_tag,
-                token=args.token,
-                claude=args.claude
-            )
-
-        print(f"Processing complete. Output saved to {output_file}")
+    print(f"Processing complete. Output saved to {output_file}")
 
 if __name__ == "__main__":
     main()
