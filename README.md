@@ -123,8 +123,8 @@ Create a `.env` file with the following settings:
 ```plaintext
 ANTHROPIC_API_KEY=your_api_key
 RATE_LIMIT=20
-PLANNING_MODEL=claude-3-opus
-EXECUTION_MODEL=claude-3-sonnet
+PLANNING_MODEL=claude-3-5-sonnet-latest
+EXECUTION_MODEL=claude-3-5-haiku-latest
 ```
 
 See `.env.template` for all available configurations.

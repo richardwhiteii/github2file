@@ -9,7 +9,7 @@ import sys
 import requests
 import zipfile
 import io
-import ast
+#import ast
 import argparse
 import asyncio
 from typing import List, Optional
@@ -77,15 +77,18 @@ def has_sufficient_content(file_content, min_line_count=10):
     lines = [line for line in file_content.split('\n') if line.strip() and not line.strip().startswith(('#', '//'))]
     return len(lines) >= min_line_count
 
-def remove_comments_and_docstrings(source):
-    """Remove comments and docstrings from the Python source code."""
-    tree = ast.parse(source)
-    for node in ast.walk(tree):
-        if isinstance(node, (ast.FunctionDef, ast.ClassDef, ast.AsyncFunctionDef)) and ast.get_docstring(node):
-            node.body = node.body[1:]
-        elif isinstance(node, ast.Expr) and isinstance(node.value, ast.Constant):
-            node.value.value = ""
-    return ast.unparse(tree)
+# def remove_comments_and_docstrings(source):
+#     """Remove comments and docstrings from the Python source code without executing."""
+#     try:
+#         tree = ast.parse(source)
+#         for node in ast.walk(tree):
+#             if isinstance(node, (ast.FunctionDef, ast.ClassDef, ast.AsyncFunctionDef)) and ast.get_docstring(node):
+#                 node.body = node.body[1:]
+#             elif isinstance(node, ast.Expr) and isinstance(node.value, ast.Constant):
+#                 node.value.value = ""
+#         return ast.unparse(tree)
+#     except:
+#         return source  # Return original source if parsing fails
 
 def construct_download_url(repo_url, branch_or_tag):
     """Construct the appropriate download URL for GitHub or GitLab."""
@@ -136,7 +139,9 @@ async def process_with_llm(repo_url: str, output_file: str, args) -> None:
         print(f"Error during LLM analysis: {str(e)}")
         sys.exit(1)
 
-def download_repo(repo_url, output_file, lang, keep_comments=False, branch_or_tag="main", token=None, claude=False):
+# def download_repo(repo_url, output_file, lang, keep_comments=False, branch_or_tag="main", token=None, claude=False):
+#     """Download and process files from a GitHub or GitLab repository."""
+def download_repo(repo_url, output_folder, lang, keep_comments=False, branch_or_tag="main", token=None, claude=False):
     """Download and process files from a GitHub or GitLab repository."""
     # Original download_repo implementation remains unchanged
     download_url = construct_download_url(repo_url, branch_or_tag)
@@ -192,10 +197,10 @@ def download_repo(repo_url, output_file, lang, keep_comments=False, branch_or_ta
                 continue
 
             # Skip test files based on content and files with insufficient substantive content
-            if is_test_file(file_content, lang) or not has_sufficient_content(file_content):
-                continue
-            if lang == "python" and not keep_comments:
-                file_content = remove_comments_and_docstrings(file_content)
+            # if is_test_file(file_content, lang) or not has_sufficient_content(file_content):
+            #     continue
+            # if lang == "python" and not keep_comments:
+            #     file_content = remove_comments_and_docstrings(file_content)
 
             if claude and isinstance(claude, bool):
                 outfile.write(f"<document index=\"{index}\">\n")
@@ -252,6 +257,9 @@ def print_usage():
 
 
 def main():
+    # Create output directory if it doesn't exist
+    output_folder = "repos"
+    os.makedirs(output_folder, exist_ok=True)
     """Main entry point with enhanced argument parsing."""
     parser = argparse.ArgumentParser(description='Download and analyze GitHub/GitLab repositories with optional LLM processing.')
     parser.add_argument('repo_url', type=str, help='The URL of the GitHub or GitLab repository')
@@ -279,10 +287,6 @@ def main():
 
     args = parser.parse_args()
 
-    # Create output directory if it doesn't exist
-    output_folder = "repos"
-    os.makedirs(output_folder, exist_ok=True)
-
     # Determine output filename based on processing mode
     base_filename = f"{args.repo_url.split('/')[-1]}_{args.lang}"
     if args.llm:
@@ -294,9 +298,9 @@ def main():
             output_file = output_file.replace('.txt', '-claude.txt')
         download_repo(
             repo_url=args.repo_url,
-            output_file=output_folder,
+            output_folder=output_folder,
             lang=args.lang,
-            keep_comments=args.keep_comments,
+            #keep_comments=args.keep_comments,
             branch_or_tag=args.branch_or_tag,
             token=args.token,
             claude=args.claude

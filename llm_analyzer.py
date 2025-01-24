@@ -48,19 +48,20 @@ class LLMInterface:
         self.last_call = 0
 
     @backoff.on_exception(backoff.expo, anthropic.RateLimitError, max_tries=8)
-    async def call_llm(self, prompt: str, model: str = "claude-3-sonnet") -> str:
+    def call_llm(self, prompt: str, model: str = "claude-3-5-sonnet-latest") -> str:
         """Make a rate-limited call to the LLM API."""
         current_time = time.time()
         if current_time - self.last_call < (1 / self.rate_limit):
             time.sleep(1 / self.rate_limit)
         
         self.last_call = time.time()
-        response = await self.client.messages.create(
+        response = self.client.messages.create(
             model=model,
             max_tokens=4096,
             messages=[{"role": "user", "content": prompt}]
         )
-        return response.content
+
+        return response.content[0].text
 
 class AnalysisPlan:
     """
@@ -78,14 +79,14 @@ class AnalysisPlan:
         self.decisions = {}
         self.llm = LLMInterface()
 
-    async def create_plan(self) -> Dict:
+    def create_plan(self) -> Dict:
         """Generate analysis plan using high-tier model."""
         prompt = f"""Analyze the repository at {self.repository_path} and create a detailed plan for:
         1. Identifying core components and dependencies
         2. Determining which content can be derived
         3. Creating efficient prompts for derivable content"""
         
-        response = await self.llm.call_llm(prompt, "claude-3-opus")
+        response = self.llm.call_llm(prompt, "claude-3-5-sonnet-latest")
         return json.loads(response)
 
 class DependencyGraph:
@@ -151,7 +152,7 @@ class DerivedCompression:
         self.llm = llm
         self.derived_content = {}
 
-    async def analyze_content(self, file_path: str, content: str) -> Dict:
+    def analyze_content(self, file_path: str, content: str) -> Dict:
         """Analyze file content for potential derivation."""
         prompt = f"""Analyze this file content and determine if it can be derived from other files:
         Path: {file_path}
@@ -162,7 +163,7 @@ class DerivedCompression:
         2. What files would be needed to recreate this content?
         3. What prompt would enable accurate recreation?"""
         
-        response = await self.llm.call_llm(prompt)
+        response = self.llm.call_llm(prompt)
         return json.loads(response)
 
 class LLMAnalyzer:
@@ -183,16 +184,16 @@ class LLMAnalyzer:
         self.dependency_graph = DependencyGraph()
         self.compression = DerivedCompression(self.llm)
         
-    async def analyze(self, dry_run: bool = False) -> Dict:
+    def analyze(self, dry_run: bool = False) -> Dict:
         """Perform complete repository analysis."""
         # Create analysis plan
-        analysis_plan = await self.plan.create_plan()
+        analysis_plan = self.plan.create_plan()
         if dry_run:
             return {"analysis_plan": analysis_plan}
 
         # Execute analysis
         self.log("Starting repository analysis...", 1)
-        results = await self._execute_analysis(analysis_plan)
+        results = self._execute_analysis(analysis_plan)
         
         # Generate artifact
         artifact = self._generate_artifact(results)
@@ -235,8 +236,26 @@ class LLMAnalyzer:
         if level <= self.verbose_level:
             print(f"[LLMAnalyzer] {message}")
 
-    async def _execute_analysis(self, analysis_plan: Dict) -> Dict:
+async def _execute_analysis(self, analysis_plan: Dict) -> Dict:
         """Execute the analysis plan using lower-tier model."""
-        # Implementation of the analysis execution
-        # This would be split into separate modules in the future
-        pass
+        try:
+            # Initialize basic structure
+            results = {
+                "analysis_plan": analysis_plan,
+                "preserved_content": {},
+                "derived_content": {}
+            }
+            
+            # Execute each step in the plan
+            for step in analysis_plan.get("steps", []):
+                step_result = await self._execute_step(step)
+                results[step["type"]] = step_result
+                
+            return results
+            
+        except Exception as e:
+            self.log(f"Error executing analysis: {str(e)}", 1)
+            return {
+                "error": str(e),
+                "analysis_plan": analysis_plan
+            }
