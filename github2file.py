@@ -100,12 +100,12 @@ def construct_download_url(repo_url, branch_or_tag):
     else:
         raise ValueError("Unsupported repository URL. Only GitHub and GitLab URLs are supported.")
 
-async def process_with_llm(repo_url: str, output_file: str, args) -> None:
+def process_with_llm(repo_url: str, output_file: str, args) -> None:
     """Process repository using LLM analysis."""
     analyzer = LLMAnalyzer(repo_url, args.verbose)
     
     try:
-        results = await analyzer.analyze(dry_run=args.dry_run)
+        results = analyzer.analyze(dry_run=args.dry_run)
         
         # Save results based on format preference
         if args.format == 'json':
@@ -134,7 +134,8 @@ async def process_with_llm(repo_url: str, output_file: str, args) -> None:
             tree.write(output_file, encoding='utf-8', xml_declaration=True)
         
         print(f"Analysis complete. Results saved to {output_file}")
-        
+        return
+
     except Exception as e:
         print(f"Error during LLM analysis: {str(e)}")
         sys.exit(1)

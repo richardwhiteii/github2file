@@ -166,39 +166,74 @@ class DerivedCompression:
         response = self.llm.call_llm(prompt)
         return json.loads(response)
 
-class LLMAnalyzer:
-    """
-    Main analyzer class that orchestrates the LLM-based repository analysis process.
+# class LLMAnalyzer:
+#     """
+#     Main analyzer class that orchestrates the LLM-based repository analysis process.
     
-    Future Modularization:
-    -> core/
-        - analyzer.py: Main analysis logic
-        - config.py: Configuration management
-        - utils.py: Utility functions
-    """
+#     Future Modularization:
+#     -> core/
+#         - analyzer.py: Main analysis logic
+#         - config.py: Configuration management
+#         - utils.py: Utility functions
+#     """
+#     def __init__(self, repository_url: str, verbose_level: int = 1):
+#         self.repository_url = repository_url
+#         self.verbose_level = verbose_level
+#         self.llm = LLMInterface()
+#         self.plan = AnalysisPlan(repository_url)
+#         self.dependency_graph = DependencyGraph()
+#         self.compression = DerivedCompression(self.llm)
+        
+#     def analyze(self, dry_run: bool = False) -> Dict:
+#         """Perform complete repository analysis."""
+#         # Create analysis plan
+#         analysis_plan = self.plan.create_plan()
+#         if dry_run:
+#             return {"analysis_plan": analysis_plan}
+
+#         # Execute analysis
+#         self.log("Starting repository analysis...", 1)
+#         results = self._execute_analysis(analysis_plan)
+        
+#         # Generate artifact
+#         artifact = self._generate_artifact(results)
+#         return artifact
+class LLMAnalyzer:
     def __init__(self, repository_url: str, verbose_level: int = 1):
         self.repository_url = repository_url
         self.verbose_level = verbose_level
-        self.llm = LLMInterface()
-        self.plan = AnalysisPlan(repository_url)
-        self.dependency_graph = DependencyGraph()
-        self.compression = DerivedCompression(self.llm)
+        self.client = anthropic.Client(api_key=os.getenv('ANTHROPIC_API_KEY'))
         
     def analyze(self, dry_run: bool = False) -> Dict:
-        """Perform complete repository analysis."""
-        # Create analysis plan
-        analysis_plan = self.plan.create_plan()
-        if dry_run:
-            return {"analysis_plan": analysis_plan}
-
-        # Execute analysis
-        self.log("Starting repository analysis...", 1)
-        results = self._execute_analysis(analysis_plan)
+        try:
+            # Simple test analysis
+            prompt = f"""Please output a valid JSON object with this structure:
+            {{
+                "repository": "{self.repository_url}",
+                "analysis": {{
+                    "components": [],
+                    "dependencies": []
+                }}
+            }}"""
+            
+            response = self.client.messages.create(
+                model="claude-3-5-sonnet-latest",
+                max_tokens=4096,
+                messages=[{"role": "user", "content": prompt}]
+            )
+            
+            result = response.content[0].text
+            print(f"Raw response: {result}")  # Debug print
+            
+            return json.loads(result)
+            
+        except Exception as e:
+            print(f"Error: {str(e)}")  # Debug print
+            return {
+                "error": str(e),
+                "repository": self.repository_url
+            }
         
-        # Generate artifact
-        artifact = self._generate_artifact(results)
-        return artifact
-
     def _generate_artifact(self, results: Dict) -> Dict:
         """Generate the repository analysis artifact."""
         artifact = {
@@ -236,7 +271,7 @@ class LLMAnalyzer:
         if level <= self.verbose_level:
             print(f"[LLMAnalyzer] {message}")
 
-async def _execute_analysis(self, analysis_plan: Dict) -> Dict:
+    def _execute_analysis(self, analysis_plan: Dict) -> Dict:
         """Execute the analysis plan using lower-tier model."""
         try:
             # Initialize basic structure
@@ -248,7 +283,7 @@ async def _execute_analysis(self, analysis_plan: Dict) -> Dict:
             
             # Execute each step in the plan
             for step in analysis_plan.get("steps", []):
-                step_result = await self._execute_step(step)
+                step_result = self._execute_step(step)
                 results[step["type"]] = step_result
                 
             return results
