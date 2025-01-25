@@ -42,6 +42,7 @@ Replace `<USERNAME>` with your GitHub username and `<GITHUB_ACCESS_TOKEN>` with 
 - `--keep-comments`: Keep comments and docstrings in the source code (only applicable for Python).
 - `--branch_or_tag`: Specify the branch or tag of the repository to download (default: "master").
 - `--claude`: Format the output for Claude with document tags
+- `--all`: Include all non-binary files in the output file
 
 ### Example
 
@@ -58,6 +59,14 @@ To download and process files from a private repository, run:
 ```
 python github2file.py https://<USERNAME>:<GITHUB_ACCESS_TOKEN>@github.com/username/private-repo
 ```
+
+To include all non-binary files in the output file, use the `--all` argument:
+
+```
+python github2file.py https://github.com/username/repository --all
+```
+
+This will create a file named `repository_language.txt` containing the combined source code from the specified repository, with a manifest of all non-binary files as the first document.
 
 ## Output
 

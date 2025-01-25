@@ -58,12 +58,22 @@ def remove_comments_and_docstrings(source):
 
     return ast.unparse(tree)
 
-def download_repo(repo_url, output_file):
+def download_repo(repo_url, output_file, include_all=False):
     """Download and process files from a GitHub repository."""
     response = requests.get(repo_url + "/archive/master.zip")
     zip_file = zipfile.ZipFile(io.BytesIO(response.content))
 
     with open(output_file, "w", encoding="utf-8") as outfile:
+        if include_all:
+            manifest = []
+            for file_path in zip_file.namelist():
+                if not file_path.endswith("/") and not file_path.startswith(".") and not file_path.startswith("__"):
+                    manifest.append(file_path)
+            outfile.write("# Manifest of all non-binary files:\n")
+            for file_path in manifest:
+                outfile.write(f"# {file_path}\n")
+            outfile.write("\n\n")
+
         for file_path in zip_file.namelist():
             # Skip directories, non-Python files, less likely useful files, hidden directories, and test files
             if file_path.endswith("/") or not is_python_file(file_path) or not is_likely_useful_file(file_path):
@@ -88,7 +98,7 @@ def download_repo(repo_url, output_file):
 def main():
     root = tk.Tk()
     root.title("GitHub Repo Downloader")
-    root.geometry("500x140")  # Make the window 10% shorter
+    root.geometry("500x180")  # Make the window 10% shorter
     root.configure(bg="#1c1c1c")  # Set the background color to a dark shade
 
     # Custom font
@@ -102,20 +112,22 @@ def main():
 
     def browse_repo():
         repo_url = repo_entry.get()
+        include_all = include_all_var.get()
         if repo_url:
             repo_name = repo_url.split("/")[-1]
             output_file = f"{repo_name}_python.txt"
-            download_repo(repo_url, output_file)
+            download_repo(repo_url, output_file, include_all=include_all)
             messagebox.showinfo("Success", f"Combined Python source code saved to {output_file}", parent=root)
         else:
             messagebox.showerror("Error", "Please enter a valid GitHub repository URL.", parent=root)
 
     def browse_file():
         file_path = filedialog.asksaveasfilename(defaultextension=".txt", filetypes=[("Text Files", "*.txt")], parent=root)
+        include_all = include_all_var.get()
         if file_path:
             repo_url = repo_entry.get()
             if repo_url:
-                download_repo(repo_url, file_path)
+                download_repo(repo_url, file_path, include_all=include_all)
                 messagebox.showinfo("Success", f"Combined Python source code saved to {file_path}", parent=root)
             else:
                 messagebox.showerror("Error", "Please enter a valid GitHub repository URL.", parent=root)
@@ -125,6 +137,10 @@ def main():
 
     repo_entry = tk.Entry(root, width=40, font=custom_font, bg="#333333", fg="#ffffff")  # Light text on dark background
     repo_entry.pack()
+
+    include_all_var = tk.BooleanVar()
+    include_all_check = tk.Checkbutton(root, text="Include all non-binary files", variable=include_all_var, font=custom_font, fg="#00d0ff", bg="#1c1c1c", selectcolor="#333333")
+    include_all_check.pack(pady=5)
 
     button_frame = tk.Frame(root, bg="#1c1c1c")  # Dark background for the button frame
     button_frame.pack(pady=10)
