@@ -192,13 +192,14 @@ def find_readme_content(zip_file):
     return readme_file_path, readme_content
 
 def print_usage():
-    print("Usage: python github2file.py <repo_url> [--lang <language>] [--keep-comments] [--branch_or_tag <branch_or_tag>] [--claude]")
+    print("Usage: python github2file.py <repo_url> [--lang <language>] [--keep-comments] [--branch_or_tag <branch_or_tag>] [--claude] [--all]")
     print("Options:")
     print("  <repo_url>               The URL of the GitHub repository")
     print("  --lang <language>        The programming language of the repository (choices: go, python, md). Default: python")
     print("  --keep-comments          Keep comments and docstrings in the source code (only applicable for Python)")
     print("  --branch_or_tag <branch_or_tag>  The branch or tag of the repository to download. Default: master")
     print("  --claude                 Format the output for Claude with document tags")
+    print("  --all                    Download all files, including those that are less likely to be useful")
 
 if __name__ == "__main__":
 
