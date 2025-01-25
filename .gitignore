@@ -9,5 +9,5 @@ pharmaink.git_symfony.txt
 .history
 repos
 
-.pyc
+*.pyc
 .env
