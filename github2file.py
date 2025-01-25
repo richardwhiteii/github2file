@@ -111,7 +111,7 @@ def check_default_branches(repo_url, token=None):
     else:
         raise ValueError("Neither 'main' nor 'master' branches are present in the repository.")
 
-def download_repo(repo_url, output_file, lang, keep_comments=False, branch_or_tag="main", token=None, claude=False):
+def download_repo(repo_url, output_file, lang, keep_comments=False, branch_or_tag="main", token=None, claude=False, include_all=False):
     """Download and process files from a GitHub or GitLab repository."""
     try:
         branch_or_tag = check_default_branches(repo_url, token)
@@ -157,6 +157,16 @@ def download_repo(repo_url, output_file, lang, keep_comments=False, branch_or_ta
         else:
             outfile.write(f"{'// ' if lang == 'go' else '# '}File: {readme_file_path}\n")
             outfile.write(readme_content)
+            outfile.write("\n\n")
+
+        if include_all:
+            manifest = []
+            for file_path in zip_file.namelist():
+                if not file_path.endswith("/") and not file_path.startswith(".") and not file_path.startswith("__"):
+                    manifest.append(file_path)
+            outfile.write("# Manifest of all non-binary files:\n")
+            for file_path in manifest:
+                outfile.write(f"# {file_path}\n")
             outfile.write("\n\n")
 
         index = 1
@@ -222,13 +232,14 @@ def find_readme_content(zip_file):
     return readme_file_path, readme_content
 
 def print_usage():
-    print("Usage: python github2file.py <repo_url> [--lang <language>] [--keep-comments] [--branch_or_tag <branch_or_tag>] [--claude]")
+    print("Usage: python github2file.py <repo_url> [--lang <language>] [--keep-comments] [--branch_or_tag <branch_or_tag>] [--claude] [--all]")
     print("Options:")
     print("  <repo_url>               The URL of the GitHub repository")
     print("  --lang <language>        The programming language of the repository (choices: go, python, md). Default: python")
     print("  --keep-comments          Keep comments and docstrings in the source code (only applicable for Python)")
     print("  --branch_or_tag <branch_or_tag>  The branch or tag of the repository to download. Default: master")
     print("  --claude                 Format the output for Claude with document tags")
+    print("  --all                    Include all non-binary files in the output file")
 
 if __name__ == "__main__":
 
@@ -239,6 +250,7 @@ if __name__ == "__main__":
     parser.add_argument('--branch_or_tag', type=str, help='The branch or tag of the repository to download', default="main")
     parser.add_argument('--token', type=str, help='Personal access token for private repositories', default=None)
     parser.add_argument('--claude', action='store_true', help='Format the output for Claude with document tags')
+    parser.add_argument('--all', action='store_true', help='Include all non-binary files in the output file')
 
     args = parser.parse_args()
     output_folder = "repos"
@@ -246,7 +258,7 @@ if __name__ == "__main__":
     output_file_base = f"{args.repo_url.split('/')[-1]}_{args.lang}.txt"
     output_file = output_file_base if not args.claude else f"{output_file_base}-claude.txt"
 
-    download_repo(repo_url=args.repo_url, output_file=output_folder, lang=args.lang, keep_comments=args.keep_comments, branch_or_tag=args.branch_or_tag, token=args.token, claude=args.claude)
+    download_repo(repo_url=args.repo_url, output_file=output_folder, lang=args.lang, keep_comments=args.keep_comments, branch_or_tag=args.branch_or_tag, token=args.token, claude=args.claude, include_all=args.all)
 
     print(f"Combined {args.lang.capitalize()} source code saved to {output_file}")
 
