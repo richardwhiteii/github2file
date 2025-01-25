@@ -87,6 +87,16 @@ def construct_download_url(repo_url, branch_or_tag):
     else:
         raise ValueError("Unsupported repository URL. Only GitHub and GitLab URLs are supported.")
 
+def is_binary_file(content_sample):
+    """
+    Check if a file appears to be binary based on its content.
+    """
+    try:
+        content_sample.decode('utf-8')
+        return '\0' in content_sample.decode('utf-8')
+    except UnicodeDecodeError:
+        return True
+    
 def check_default_branches(repo_url, token=None):
     """Check for the presence of 'main' and 'master' branches in the repository."""
     headers = {}
@@ -131,84 +141,67 @@ def check_default_branches(repo_url, token=None):
         print(f"Warning: Error parsing branch information: {str(e)}")
         return "main"
 
-def download_repo(repo_url, output_file, lang, keep_comments=False, branch_or_tag="main", token=None, claude=False, include_all=False):
-    """Download and process files from a GitHub or GitLab repository."""
-    try:
-        # Only try to check branches if no specific branch/tag was provided
-        if branch_or_tag in ["main", "master"]:
-            branch_or_tag = check_default_branches(repo_url, token)
-    except Exception as e:
-        print(f"Warning: Error checking default branches: {str(e)}")
-
-    download_url = construct_download_url(repo_url, branch_or_tag)
-    headers = {}
-
-    if token:
-        if "gitlab.com" in repo_url:
-            headers['PRIVATE-TOKEN'] = token
-        elif "github.com" in repo_url:
-            headers['Authorization'] = f'token {token}'
-
-    print(download_url)
-    response = requests.get(download_url, headers=headers)
-
-    try:
-        zip_file = zipfile.ZipFile(io.BytesIO(response.content))
-    except zipfile.BadZipFile:
-        print(f"Error: The downloaded file is not a valid ZIP archive.")
-        sys.exit(1)
-
-    repo_name = repo_url.split('/')[-1]
-    output_file = os.path.join(output_folder, f"{repo_name}_{lang}.txt")
+def process_repository_files(zip_file, outfile, lang, keep_comments=False, claude=False, include_all=False):
+    """Process all files from the repository based on specified options."""
+    # Include the README file first
+    readme_file_path, readme_content = find_readme_content(zip_file)
+    
     if claude:
-        output_file = os.path.join(output_folder, f"{repo_name}_{lang}-claude.txt")
+        outfile.write("Here are some documents for you to reference for your task:\n\n")
+        outfile.write("<documents>\n")
+        
+        outfile.write("<document index=\"0\">\n")
+        outfile.write(f"<source>{readme_file_path}</source>\n")
+        outfile.write(f"<document_content>\n{readme_content}\n</document_content>\n")
+        outfile.write("</document>\n\n")
+    else:
+        outfile.write(f"{'// ' if lang == 'go' else '# '}File: {readme_file_path}\n")
+        outfile.write(readme_content)
+        outfile.write("\n\n")
 
-    with open(output_file, "w", encoding="utf-8") as outfile:
-        # Include the README file
-        readme_file_path, readme_content = find_readme_content(zip_file)
+    # Generate complete manifest of ALL files
+    if include_all:
+        manifest = sorted([f for f in zip_file.namelist() if not f.endswith('/')])
+        outfile.write("# Complete manifest of ALL files in repository:\n")
+        for file_path in manifest:
+            outfile.write(f"# {file_path}\n")
+        outfile.write("\n\n")
 
-        if claude and isinstance(claude, bool):
-            outfile.write("Here are some documents for you to reference for your task:\n\n")
-            outfile.write("<documents>\n")
-
-            outfile.write("<document index=\"0\">\n")
-            outfile.write(f"<source>{readme_file_path}</source>\n")
-            outfile.write(f"<document_content>\n{readme_content}\n</document_content>\n")
-            outfile.write("</document>\n\n")
-        else:
-            outfile.write(f"{'// ' if lang == 'go' else '# '}File: {readme_file_path}\n")
-            outfile.write(readme_content)
-            outfile.write("\n\n")
-
-        if include_all:
-            manifest = []
-            for file_path in zip_file.namelist():
-                if not file_path.endswith("/") and not file_path.startswith(".") and not file_path.startswith("__"):
-                    manifest.append(file_path)
-            outfile.write("# Manifest of all non-binary files:\n")
-            for file_path in manifest:
-                outfile.write(f"# {file_path}\n")
-            outfile.write("\n\n")
-
-        index = 1
-        for file_path in zip_file.namelist():
-            # Skip directories, non-language files, less likely useful files, hidden directories, and test files
-            if file_path.endswith("/") or not is_file_type(file_path, lang) or not is_likely_useful_file(file_path, lang):
+    # Process files
+    index = 1
+    for file_path in zip_file.namelist():
+        if file_path.endswith('/'):  # Skip directories
+            continue
+            
+        try:
+            # Determine if file is binary
+            content_sample = zip_file.read(file_path)[:1024]  # Read first 1KB to check
+            if is_binary_file(content_sample):
+                if not include_all:
+                    continue
+                print(f"Skipping binary file in output: {file_path}")
                 continue
 
-            try:
-                file_content = zip_file.read(file_path).decode("utf-8", errors="replace")
-            except UnicodeDecodeError:
-                print(f"Warning: Skipping file {file_path} due to decoding error.")
-                continue
+            # Read full content for non-binary files
+            file_content = zip_file.read(file_path).decode('utf-8', errors='replace')
+            
+            # For non-all mode, apply filters
+            if not include_all:
+                if not is_file_type(file_path, lang) or \
+                   not is_likely_useful_file(file_path, lang) or \
+                   is_test_file(file_content, lang) or \
+                   not has_sufficient_content(file_content):
+                    continue
+            
+            # Process Python files if needed
+            if lang == "python" and not keep_comments and file_path.endswith('.py'):
+                try:
+                    file_content = remove_comments_and_docstrings(file_content)
+                except Exception as e:
+                    print(f"Warning: Could not remove comments from {file_path}: {str(e)}")
 
-            # Skip test files based on content and files with insufficient substantive content
-            if is_test_file(file_content, lang) or not has_sufficient_content(file_content):
-                continue
-            if lang == "python" and not keep_comments:
-                file_content = remove_comments_and_docstrings(file_content)
-
-            if claude and isinstance(claude, bool):
+            # Write the file content
+            if claude:
                 outfile.write(f"<document index=\"{index}\">\n")
                 outfile.write(f"<source>{file_path}</source>\n")
                 outfile.write(f"<document_content>\n{file_content}\n</document_content>\n")
@@ -218,9 +211,93 @@ def download_repo(repo_url, output_file, lang, keep_comments=False, branch_or_ta
                 outfile.write(f"{'// ' if lang == 'go' else '# '}File: {file_path}\n")
                 outfile.write(file_content)
                 outfile.write("\n\n")
+                
+        except Exception as e:
+            print(f"Warning: Error processing file {file_path}: {str(e)}")
 
-        if claude and isinstance(claude, bool):
-            outfile.write("</documents>")
+    if claude:
+        outfile.write("</documents>")
+
+def download_repo(repo_url, output_file, lang, keep_comments=False, branch_or_tag="main", token=None, claude=False, include_all=False):
+    """
+    Download and process files from a GitHub or GitLab repository.
+    
+    Args:
+        repo_url (str): URL of the GitHub/GitLab repository
+        output_file (str): Base path for the output file
+        lang (str): Programming language to filter for
+        keep_comments (bool): Whether to preserve comments in Python files
+        branch_or_tag (str): Branch or tag to download
+        token (str): Authentication token for private repos
+        claude (bool): Whether to format output for Claude
+        include_all (bool): Whether to include all repository files
+    """
+    try:
+        # Only try to check branches if no specific branch/tag was provided
+        if branch_or_tag in ["main", "master"]:
+            branch_or_tag = check_default_branches(repo_url, token)
+    except Exception as e:
+        print(f"Warning: Error checking default branches: {str(e)}")
+        # Continue with the provided branch_or_tag
+
+    # Construct appropriate download URL
+    download_url = construct_download_url(repo_url, branch_or_tag)
+    
+    # Set up authentication headers if token provided
+    headers = {}
+    if token:
+        if "gitlab.com" in repo_url:
+            headers['PRIVATE-TOKEN'] = token
+        elif "github.com" in repo_url:
+            headers['Authorization'] = f'token {token}'
+
+    # Download the repository
+    print(f"Downloading repository from: {download_url}")
+    response = requests.get(download_url, headers=headers)
+    
+    if response.status_code != 200:
+        print(f"Error: Failed to download repository. Status code: {response.status_code}")
+        sys.exit(1)
+
+    # Process the zip file
+    try:
+        zip_file = zipfile.ZipFile(io.BytesIO(response.content))
+    except zipfile.BadZipFile:
+        print(f"Error: The downloaded file is not a valid ZIP archive.")
+        sys.exit(1)
+
+    # Set up output file path
+    repo_name = repo_url.rstrip('/').split('/')[-1].replace('.git', '')
+    output_file = os.path.join(output_folder, f"{repo_name}_{lang}.txt")
+    if claude:
+        output_file = os.path.join(output_folder, f"{repo_name}_{lang}-claude.txt")
+
+    # Process and write the files
+    print(f"Processing repository files...")
+    try:
+        with open(output_file, "w", encoding="utf-8") as outfile:
+            process_repository_files(
+                zip_file=zip_file,
+                outfile=outfile,
+                lang=lang,
+                keep_comments=keep_comments,
+                claude=claude,
+                include_all=include_all
+            )
+    except Exception as e:
+        print(f"Error while processing repository files: {str(e)}")
+        sys.exit(1)
+    finally:
+        zip_file.close()
+
+    print(f"Successfully processed repository.")
+    print(f"Output saved to: {output_file}")
+    
+    # Print summary of what was included
+    if include_all:
+        print("Included: Complete manifest of all files and content of all non-binary files")
+    else:
+        print(f"Included: Filtered {lang} files meeting usefulness criteria")
 
 def find_readme_content(zip_file):
     """
