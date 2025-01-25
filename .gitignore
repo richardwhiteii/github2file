@@ -8,3 +8,4 @@ pharmaink.git_symfony.txt
 
 .history
 repos
+*.pyc
