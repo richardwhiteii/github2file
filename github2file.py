@@ -417,4 +417,3 @@ if __name__ == "__main__":
     download_repo(repo_url=args.repo_url, output_file=output_folder, lang=args.lang, keep_comments=args.keep_comments, branch_or_tag=args.branch_or_tag, token=args.token, claude=args.claude, include_all=args.all)
 
     print(f"Combined {args.lang.capitalize()} source code saved to {output_file}")
-
