@@ -87,8 +87,38 @@ def construct_download_url(repo_url, branch_or_tag):
     else:
         raise ValueError("Unsupported repository URL. Only GitHub and GitLab URLs are supported.")
 
+def check_default_branches(repo_url, token=None):
+    """Check for the presence of 'main' and 'master' branches in the repository."""
+    headers = {}
+    if token:
+        if "gitlab.com" in repo_url:
+            headers['PRIVATE-TOKEN'] = token
+        elif "github.com" in repo_url:
+            headers['Authorization'] = f'token {token}'
+
+    branches_url = f"{repo_url}/branches"
+    response = requests.get(branches_url, headers=headers)
+    if response.status_code != 200:
+        raise ValueError("Error fetching branches information from the repository.")
+
+    branches = response.json()
+    branch_names = [branch['name'] for branch in branches]
+
+    if "main" in branch_names:
+        return "main"
+    elif "master" in branch_names:
+        return "master"
+    else:
+        raise ValueError("Neither 'main' nor 'master' branches are present in the repository.")
+
 def download_repo(repo_url, output_file, lang, keep_comments=False, branch_or_tag="main", token=None, claude=False, include_all=False):
     """Download and process files from a GitHub or GitLab repository."""
+    try:
+        branch_or_tag = check_default_branches(repo_url, token)
+    except ValueError as e:
+        print(e)
+        sys.exit(1)
+
     download_url = construct_download_url(repo_url, branch_or_tag)
     headers = {}
 
