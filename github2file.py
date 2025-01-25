@@ -23,6 +23,7 @@ def get_language_extensions(language: str) -> List[str]:
     language_extensions = {
         "python": [".py", ".pyw"],
         "go": [".go"],
+        "go": [".go"],
         "javascript": [".js", ".jsx", ".ts", ".tsx"],
         "java": [".java"],
         "md": [".md"],
