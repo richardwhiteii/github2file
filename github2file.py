@@ -141,15 +141,49 @@ def check_default_branches(repo_url, token=None):
         print(f"Warning: Error parsing branch information: {str(e)}")
         return "main"
 
+def format_manifest_entry(file_path, description, doc_index, max_path_len=40):
+    """Format a manifest entry with description and indented link."""
+    # Format the first line with path and description
+    padded_path = file_path.ljust(max_path_len)
+    first_line = f"{padded_path}  {description}"
+    
+    # Create the indented link or skipped line
+    if doc_index is not None:
+        second_line = f"  <link target=\"{doc_index}\">{file_path}</link>"
+    else:
+        second_line = f"  <skipped>{file_path}</skipped>"
+        
+    return f"{first_line}\n{second_line}"
+
+def format_manifest_line(file_path, description, doc_index, max_path_len=50):
+    """Format a single manifest line with clean padding and wrapping."""
+    # Truncate and pad the path if it's too long
+    display_path = file_path
+    if len(display_path) > max_path_len:
+        parts = display_path.split('/')
+        while len(display_path) > max_path_len and len(parts) > 2:
+            parts = parts[1:]  # Remove leading directories
+            display_path = ".../" + "/".join(parts)
+    
+    padded_path = display_path.ljust(max_path_len)
+    
+    # Add the description and link
+    if doc_index is not None:
+        link = f"<link target=\"{doc_index}\">{file_path}</link>"
+    else:
+        link = f"<skipped>{file_path}</skipped>"
+        
+    return f"{padded_path}  {description}  {link}"
+
 def process_repository_files(zip_file, outfile, lang, keep_comments=False, claude=False, include_all=False):
     """Process all files from the repository based on specified options."""
-    # Include the README file first
-    readme_file_path, readme_content = find_readme_content(zip_file)
-    
     if claude:
         outfile.write("Here are some documents for you to reference for your task:\n\n")
         outfile.write("<documents>\n")
-        
+
+    # Document 0: README
+    readme_file_path, readme_content = find_readme_content(zip_file)
+    if claude:
         outfile.write("<document index=\"0\">\n")
         outfile.write(f"<source>{readme_file_path}</source>\n")
         outfile.write(f"<document_content>\n{readme_content}\n</document_content>\n")
@@ -159,61 +193,85 @@ def process_repository_files(zip_file, outfile, lang, keep_comments=False, claud
         outfile.write(readme_content)
         outfile.write("\n\n")
 
-    # Generate complete manifest of ALL files
-    if include_all:
-        manifest = sorted([f for f in zip_file.namelist() if not f.endswith('/')])
-        outfile.write("# Complete manifest of ALL files in repository:\n")
-        for file_path in manifest:
-            outfile.write(f"# {file_path}\n")
-        outfile.write("\n\n")
+    # First pass: analyze files and prepare manifest data
+    manifest_entries = []
+    included_files = []
+    next_doc_index = 2  # Start at 2 since 0 is README and 1 will be manifest
 
-    # Process files
-    index = 1
-    for file_path in zip_file.namelist():
+    for file_path in sorted(zip_file.namelist()):
         if file_path.endswith('/'):  # Skip directories
             continue
-            
+
         try:
             # Determine if file is binary
-            content_sample = zip_file.read(file_path)[:1024]  # Read first 1KB to check
-            if is_binary_file(content_sample):
-                if not include_all:
-                    continue
-                print(f"Skipping binary file in output: {file_path}")
-                continue
-
-            # Read full content for non-binary files
-            file_content = zip_file.read(file_path).decode('utf-8', errors='replace')
+            content_sample = zip_file.read(file_path)[:1024]
+            is_binary = is_binary_file(content_sample)
             
-            # For non-all mode, apply filters
-            if not include_all:
-                if not is_file_type(file_path, lang) or \
-                   not is_likely_useful_file(file_path, lang) or \
-                   is_test_file(file_content, lang) or \
-                   not has_sufficient_content(file_content):
-                    continue
+            description = "Binary file" if is_binary else "Source file"
             
-            # Process Python files if needed
-            if lang == "python" and not keep_comments and file_path.endswith('.py'):
-                try:
-                    file_content = remove_comments_and_docstrings(file_content)
-                except Exception as e:
-                    print(f"Warning: Could not remove comments from {file_path}: {str(e)}")
-
-            # Write the file content
-            if claude:
-                outfile.write(f"<document index=\"{index}\">\n")
-                outfile.write(f"<source>{file_path}</source>\n")
-                outfile.write(f"<document_content>\n{file_content}\n</document_content>\n")
-                outfile.write("</document>\n\n")
-                index += 1
+            if not is_binary:
+                file_content = zip_file.read(file_path).decode('utf-8', errors='replace')
+                
+                # Check if file should be included
+                should_include = include_all or (
+                    is_file_type(file_path, lang) and
+                    is_likely_useful_file(file_path, lang) and
+                    not is_test_file(file_content, lang) and
+                    has_sufficient_content(file_content)
+                )
+                
+                if should_include:
+                    manifest_entries.append((file_path, description, next_doc_index))
+                    included_files.append((file_path, file_content))
+                    next_doc_index += 1
+                else:
+                    manifest_entries.append((file_path, "Excluded file", None))
             else:
-                outfile.write(f"{'// ' if lang == 'go' else '# '}File: {file_path}\n")
-                outfile.write(file_content)
-                outfile.write("\n\n")
+                manifest_entries.append((file_path, description, None))
                 
         except Exception as e:
             print(f"Warning: Error processing file {file_path}: {str(e)}")
+            manifest_entries.append((file_path, "Error processing file", None))
+
+    # Document 1: Manifest with links
+    manifest_content = "<manifest>\n# Repository Contents:\n"
+    
+    # Add each file to manifest with clean formatting
+    for file_path, description, doc_index in manifest_entries:
+        manifest_line = format_manifest_line(file_path, description, doc_index)
+        manifest_content += manifest_line + "\n"
+    
+    manifest_content += "</manifest>"
+    
+    if claude:
+        outfile.write("<document index=\"1\">\n")
+        outfile.write("<source>manifest.txt</source>\n")
+        outfile.write(f"<document_content>\n{manifest_content}\n</document_content>\n")
+        outfile.write("</document>\n\n")
+    else:
+        outfile.write("# File: manifest.txt\n")
+        outfile.write(manifest_content)
+        outfile.write("\n\n")
+
+    # Write remaining documents
+    for file_path, file_content in included_files:
+        if lang == "python" and not keep_comments and file_path.endswith('.py'):
+            try:
+                file_content = remove_comments_and_docstrings(file_content)
+            except Exception as e:
+                print(f"Warning: Could not remove comments from {file_path}: {str(e)}")
+
+        doc_index = next(entry[2] for entry in manifest_entries if entry[0] == file_path)
+        
+        if claude:
+            outfile.write(f"<document index=\"{doc_index}\">\n")
+            outfile.write(f"<source>{file_path}</source>\n")
+            outfile.write(f"<document_content>\n{file_content}\n</document_content>\n")
+            outfile.write("</document>\n\n")
+        else:
+            outfile.write(f"{'// ' if lang == 'go' else '# '}File: {file_path}\n")
+            outfile.write(file_content)
+            outfile.write("\n\n")
 
     if claude:
         outfile.write("</documents>")
