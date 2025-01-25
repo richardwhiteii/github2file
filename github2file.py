@@ -95,29 +95,50 @@ def check_default_branches(repo_url, token=None):
             headers['PRIVATE-TOKEN'] = token
         elif "github.com" in repo_url:
             headers['Authorization'] = f'token {token}'
-
-    branches_url = f"{repo_url}/branches"
-    response = requests.get(branches_url, headers=headers)
-    if response.status_code != 200:
-        raise ValueError("Error fetching branches information from the repository.")
-
-    branches = response.json()
-    branch_names = [branch['name'] for branch in branches]
-
-    if "main" in branch_names:
-        return "main"
-    elif "master" in branch_names:
-        return "master"
+    
+    # Modify the URL to use GitHub's API
+    if "github.com" in repo_url:
+        api_url = repo_url.replace("github.com", "api.github.com/repos")
+        branches_url = f"{api_url}/branches"
+    elif "gitlab.com" in repo_url:
+        branches_url = f"{repo_url}/branches"
     else:
-        raise ValueError("Neither 'main' nor 'master' branches are present in the repository.")
+        raise ValueError("Unsupported repository URL. Only GitHub and GitLab URLs are supported.")
+
+    response = requests.get(branches_url, headers=headers)
+    
+    if response.status_code != 200:
+        print(f"Warning: Unable to fetch branches (Status code: {response.status_code})")
+        # Fall back to trying 'main' first, then 'master'
+        return "main"
+    
+    try:
+        branches = response.json()
+        if not isinstance(branches, list):
+            print("Warning: Unexpected API response format")
+            return "main"
+            
+        branch_names = [branch['name'] for branch in branches]
+        
+        if "main" in branch_names:
+            return "main"
+        elif "master" in branch_names:
+            return "master"
+        else:
+            print("Warning: Neither 'main' nor 'master' branches found")
+            return "main"
+    except (ValueError, KeyError) as e:
+        print(f"Warning: Error parsing branch information: {str(e)}")
+        return "main"
 
 def download_repo(repo_url, output_file, lang, keep_comments=False, branch_or_tag="main", token=None, claude=False, include_all=False):
     """Download and process files from a GitHub or GitLab repository."""
     try:
-        branch_or_tag = check_default_branches(repo_url, token)
-    except ValueError as e:
-        print(e)
-        sys.exit(1)
+        # Only try to check branches if no specific branch/tag was provided
+        if branch_or_tag in ["main", "master"]:
+            branch_or_tag = check_default_branches(repo_url, token)
+    except Exception as e:
+        print(f"Warning: Error checking default branches: {str(e)}")
 
     download_url = construct_download_url(repo_url, branch_or_tag)
     headers = {}
