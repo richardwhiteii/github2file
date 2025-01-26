@@ -9,7 +9,7 @@ This Python script allows you to download and process files from a GitHub reposi
 - Filter files based on programming language (Python, Markdown, Go, JavaScript)
 - Exclude certain directories, file types, and test files
 - Remove comments and docstrings from Python source code (optional)
-- Specify a branch or tag to download from (default: "master")
+- Specify a branch or tag to download from (default: "main" or "master")
 - New GUI feature implemented in `github2file-tkinter-GUI.py`
 - New `--claude` option for formatting output for Claude
 - New script `ts-js-rust2file.py` for handling TypeScript, JavaScript, Svelte, and Rust files
@@ -40,8 +40,9 @@ Replace `<USERNAME>` with your GitHub username and `<GITHUB_ACCESS_TOKEN>` with 
 
 - `--lang`: Specify the programming language of the repository. Choices: "md", "go", "javascript" or "python" (default: "python").
 - `--keep-comments`: Keep comments and docstrings in the source code (only applicable for Python).
-- `--branch_or_tag`: Specify the branch or tag of the repository to download (default: "master").
+- `--branch_or_tag`: Specify the branch or tag of the repository to download (default: "main" or "master").
 - `--claude`: Format the output for Claude with document tags
+- `--all`: Include all non-binary files in the output file
 
 ### Example
 
@@ -58,6 +59,14 @@ To download and process files from a private repository, run:
 ```
 python github2file.py https://<USERNAME>:<GITHUB_ACCESS_TOKEN>@github.com/username/private-repo
 ```
+
+To include all non-binary files in the output file, use the `--all` argument:
+
+```
+python github2file.py https://github.com/username/repository --all
+```
+
+This will create a file named `repository_language.txt` containing the combined source code from the specified repository, with a manifest of all non-binary files as the first document.
 
 ## Output
 
