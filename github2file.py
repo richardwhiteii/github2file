@@ -5,6 +5,7 @@ import zipfile
 import io
 import ast
 import argparse
+import logging
 from typing import List
 
 def get_language_extensions(language: str) -> List[str]:
