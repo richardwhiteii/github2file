@@ -13,6 +13,8 @@ This Python script allows you to download and process files from a GitHub reposi
 - New GUI feature implemented in `github2file-tkinter-GUI.py`
 - New `--claude` option for formatting output for Claude
 - New script `ts-js-rust2file.py` for handling TypeScript, JavaScript, Svelte, and Rust files
+- Structured logging system to replace print statements
+- Verbose flag to enable detailed logging
 
 ## Install
 
@@ -43,6 +45,7 @@ Replace `<USERNAME>` with your GitHub username and `<GITHUB_ACCESS_TOKEN>` with 
 - `--branch_or_tag`: Specify the branch or tag of the repository to download (default: "main" or "master").
 - `--claude`: Format the output for Claude with document tags
 - `--all`: Include all non-binary files in the output file
+- `--verbose`: Enable verbose logging for detailed information
 
 ### Example
 

@@ -6,6 +6,36 @@ import io
 import ast
 import tkinter as tk
 from tkinter import filedialog, messagebox, font, ttk
+import logging
+from logging.handlers import RotatingFileHandler
+
+def setup_logging(verbose=False):
+    log_level = logging.DEBUG if verbose else logging.INFO
+    
+    # Configure root logger
+    logging.basicConfig(
+        level=log_level,
+        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+        datefmt='%Y-%m-%d %H:%M:%S'
+    )
+    
+    # Create file handler
+    file_handler = RotatingFileHandler(
+        'github2file.log',
+        maxBytes=1024 * 1024,  # 1MB
+        backupCount=5
+    )
+    file_handler.setFormatter(logging.Formatter(
+        '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    ))
+    
+    # Get logger
+    logger = logging.getLogger('github2file')
+    logger.addHandler(file_handler)
+    
+    return logger
+
+logger = setup_logging()
 
 def is_python_file(file_path):
     """Check if the file is a Python file."""
@@ -89,6 +119,7 @@ def download_repo(repo_url, output_file, include_all=False):
                 file_content = remove_comments_and_docstrings(file_content)
             except SyntaxError:
                 # Skip files with syntax errors
+                logger.warning(f"Skipping file {file_path} due to syntax error.")
                 continue
 
             outfile.write(f"# File: {file_path}\n")
@@ -96,14 +127,14 @@ def download_repo(repo_url, output_file, include_all=False):
             outfile.write("\n\n")
 
 def print_usage():
-    print("Usage: python github2file-tkinter-GUI.py <repo_url> [--lang <language>] [--keep-comments] [--branch_or_tag <branch_or_tag>] [--claude] [--all]")
-    print("Options:")
-    print("  <repo_url>               The URL of the GitHub repository")
-    print("  --lang <language>        The programming language of the repository (choices: go, python, md). Default: python")
-    print("  --keep-comments          Keep comments and docstrings in the source code (only applicable for Python)")
-    print("  --branch_or_tag <branch_or_tag>  The branch or tag of the repository to download. Default: master")
-    print("  --claude                 Format the output for Claude with document tags")
-    print("  --all                    Download all files, including those that are less likely to be useful")
+    logger.info("Usage: python github2file-tkinter-GUI.py <repo_url> [--lang <language>] [--keep-comments] [--branch_or_tag <branch_or_tag>] [--claude] [--all]")
+    logger.info("Options:")
+    logger.info("  <repo_url>               The URL of the GitHub repository")
+    logger.info("  --lang <language>        The programming language of the repository (choices: go, python, md). Default: python")
+    logger.info("  --keep-comments          Keep comments and docstrings in the source code (only applicable for Python)")
+    logger.info("  --branch_or_tag <branch_or_tag>  The branch or tag of the repository to download. Default: master")
+    logger.info("  --claude                 Format the output for Claude with document tags")
+    logger.info("  --all                    Download all files, including those that are less likely to be useful")
 
 def main():
     root = tk.Tk()
