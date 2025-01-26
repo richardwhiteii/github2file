@@ -6,7 +6,34 @@ import io
 import ast
 import argparse
 import logging
+from logging.handlers import RotatingFileHandler
 from typing import List
+
+def setup_logging(verbose=False):
+    log_level = logging.DEBUG if verbose else logging.INFO
+    
+    # Configure root logger
+    logging.basicConfig(
+        level=log_level,
+        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+        datefmt='%Y-%m-%d %H:%M:%S'
+    )
+    
+    # Create file handler
+    file_handler = RotatingFileHandler(
+        'github2file.log',
+        maxBytes=1024 * 1024,  # 1MB
+        backupCount=5
+    )
+    file_handler.setFormatter(logging.Formatter(
+        '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    ))
+    
+    # Get logger
+    logger = logging.getLogger('github2file')
+    logger.addHandler(file_handler)
+    
+    return logger
 
 def get_language_extensions(language: str) -> List[str]:
     """Return a list of file extensions for the specified programming language."""
@@ -119,14 +146,14 @@ def check_default_branches(repo_url, token=None):
     response = requests.get(branches_url, headers=headers)
     
     if response.status_code != 200:
-        print(f"Warning: Unable to fetch branches (Status code: {response.status_code})")
+        logger.warning(f"Unable to fetch branches (Status code: {response.status_code})")
         # Fall back to trying 'main' first, then 'master'
         return "main"
     
     try:
         branches = response.json()
         if not isinstance(branches, list):
-            print("Warning: Unexpected API response format")
+            logger.warning("Unexpected API response format")
             return "main"
             
         branch_names = [branch['name'] for branch in branches]
@@ -136,10 +163,10 @@ def check_default_branches(repo_url, token=None):
         elif "master" in branch_names:
             return "master"
         else:
-            print("Warning: Neither 'main' nor 'master' branches found")
+            logger.warning("Neither 'main' nor 'master' branches found")
             return "main"
     except (ValueError, KeyError) as e:
-        print(f"Warning: Error parsing branch information: {str(e)}")
+        logger.warning(f"Error parsing branch information: {str(e)}")
         return "main"
 
 def format_manifest_entry(file_path, description, doc_index, max_path_len=40):
@@ -231,7 +258,7 @@ def process_repository_files(zip_file, outfile, lang, keep_comments=False, claud
                 manifest_entries.append((file_path, description, None))
                 
         except Exception as e:
-            print(f"Warning: Error processing file {file_path}: {str(e)}")
+            logger.warning(f"Error processing file {file_path}: {str(e)}")
             manifest_entries.append((file_path, "Error processing file", None))
 
     # Document 1: Manifest with links
@@ -260,7 +287,7 @@ def process_repository_files(zip_file, outfile, lang, keep_comments=False, claud
             try:
                 file_content = remove_comments_and_docstrings(file_content)
             except Exception as e:
-                print(f"Warning: Could not remove comments from {file_path}: {str(e)}")
+                logger.warning(f"Could not remove comments from {file_path}: {str(e)}")
 
         doc_index = next(entry[2] for entry in manifest_entries if entry[0] == file_path)
         
@@ -296,7 +323,7 @@ def download_repo(repo_url, output_file, lang, keep_comments=False, branch_or_ta
         if branch_or_tag in ["main", "master"]:
             branch_or_tag = check_default_branches(repo_url, token)
     except Exception as e:
-        print(f"Warning: Error checking default branches: {str(e)}")
+        logger.warning(f"Error checking default branches: {str(e)}")
         # Continue with the provided branch_or_tag
 
     # Construct appropriate download URL
@@ -311,18 +338,19 @@ def download_repo(repo_url, output_file, lang, keep_comments=False, branch_or_ta
             headers['Authorization'] = f'token {token}'
 
     # Download the repository
-    print(f"Downloading repository from: {download_url}")
-    response = requests.get(download_url, headers=headers)
-    
-    if response.status_code != 200:
-        print(f"Error: Failed to download repository. Status code: {response.status_code}")
+    logger.info(f"Downloading repository from: {download_url}")
+    try:
+        response = requests.get(download_url, headers=headers)
+        response.raise_for_status()
+    except requests.exceptions.RequestException as e:
+        logger.error(f"Failed to download repository: {e}")
         sys.exit(1)
 
     # Process the zip file
     try:
         zip_file = zipfile.ZipFile(io.BytesIO(response.content))
     except zipfile.BadZipFile:
-        print(f"Error: The downloaded file is not a valid ZIP archive.")
+        logger.error(f"The downloaded file is not a valid ZIP archive.")
         sys.exit(1)
 
     # Set up output file path
@@ -332,7 +360,7 @@ def download_repo(repo_url, output_file, lang, keep_comments=False, branch_or_ta
         output_file = os.path.join(output_folder, f"{repo_name}_{lang}-claude.txt")
 
     # Process and write the files
-    print(f"Processing repository files...")
+    logger.info(f"Processing repository files...")
     try:
         with open(output_file, "w", encoding="utf-8") as outfile:
             process_repository_files(
@@ -344,19 +372,19 @@ def download_repo(repo_url, output_file, lang, keep_comments=False, branch_or_ta
                 include_all=include_all
             )
     except Exception as e:
-        print(f"Error while processing repository files: {str(e)}")
+        logger.error(f"Error while processing repository files: {str(e)}")
         sys.exit(1)
     finally:
         zip_file.close()
 
-    print(f"Successfully processed repository.")
-    print(f"Output saved to: {output_file}")
+    logger.info(f"Successfully processed repository.")
+    logger.info(f"Output saved to: {output_file}")
     
     # Print summary of what was included
     if include_all:
-        print("Included: Complete manifest of all files and content of all non-binary files")
+        logger.info("Included: Complete manifest of all files and content of all non-binary files")
     else:
-        print(f"Included: Filtered {lang} files meeting usefulness criteria")
+        logger.info(f"Included: Filtered {lang} files meeting usefulness criteria")
 
 def find_readme_content(zip_file):
     """
@@ -371,7 +399,7 @@ def find_readme_content(zip_file):
                 readme_file_path = file_path
                 break
             except UnicodeDecodeError:
-                print(f"Warning: Skipping README.md file due to decoding error.")
+                logger.warning(f"Skipping README.md file due to decoding error.")
 
     if not readme_content:
         for file_path in zip_file.namelist():
@@ -381,7 +409,7 @@ def find_readme_content(zip_file):
                     readme_file_path = file_path
                     break
                 except UnicodeDecodeError:
-                    print(f"Warning: Skipping README file due to decoding error.")
+                    logger.warning(f"Skipping README file due to decoding error.")
 
     if not readme_content:
         readme_content = "No README file found in the repository."
@@ -389,14 +417,14 @@ def find_readme_content(zip_file):
     return readme_file_path, readme_content
 
 def print_usage():
-    print("Usage: python github2file.py <repo_url> [--lang <language>] [--keep-comments] [--branch_or_tag <branch_or_tag>] [--claude] [--all]")
-    print("Options:")
-    print("  <repo_url>               The URL of the GitHub repository")
-    print("  --lang <language>        The programming language of the repository (choices: go, python, md). Default: python")
-    print("  --keep-comments          Keep comments and docstrings in the source code (only applicable for Python)")
-    print("  --branch_or_tag <branch_or_tag>  The branch or tag of the repository to download. Default: master")
-    print("  --claude                 Format the output for Claude with document tags")
-    print("  --all                    Include all non-binary files in the output file")
+    logger.info("Usage: python github2file.py <repo_url> [--lang <language>] [--keep-comments] [--branch_or_tag <branch_or_tag>] [--claude] [--all]")
+    logger.info("Options:")
+    logger.info("  <repo_url>               The URL of the GitHub repository")
+    logger.info("  --lang <language>        The programming language of the repository (choices: go, python, md). Default: python")
+    logger.info("  --keep-comments          Keep comments and docstrings in the source code (only applicable for Python)")
+    logger.info("  --branch_or_tag <branch_or_tag>  The branch or tag of the repository to download. Default: master")
+    logger.info("  --claude                 Format the output for Claude with document tags")
+    logger.info("  --all                    Include all non-binary files in the output file")
 
 if __name__ == "__main__":
 
@@ -408,8 +436,10 @@ if __name__ == "__main__":
     parser.add_argument('--token', type=str, help='Personal access token for private repositories', default=None)
     parser.add_argument('--claude', action='store_true', help='Format the output for Claude with document tags')
     parser.add_argument('--all', action='store_true', help='Include all non-binary files in the output file')
+    parser.add_argument('--verbose', '-v', action='store_true', help='Enable verbose logging')
 
     args = parser.parse_args()
+    logger = setup_logging(args.verbose)
     output_folder = "repos"
     os.makedirs(output_folder, exist_ok=True)
     output_file_base = f"{args.repo_url.split('/')[-1]}_{args.lang}.txt"
@@ -417,4 +447,4 @@ if __name__ == "__main__":
 
     download_repo(repo_url=args.repo_url, output_file=output_folder, lang=args.lang, keep_comments=args.keep_comments, branch_or_tag=args.branch_or_tag, token=args.token, claude=args.claude, include_all=args.all)
 
-    print(f"Combined {args.lang.capitalize()} source code saved to {output_file}")
+    logger.info(f"Combined {args.lang.capitalize()} source code saved to {output_file}")
