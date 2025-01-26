@@ -95,6 +95,16 @@ def download_repo(repo_url, output_file, include_all=False):
             outfile.write(file_content)
             outfile.write("\n\n")
 
+def print_usage():
+    print("Usage: python github2file-tkinter-GUI.py <repo_url> [--lang <language>] [--keep-comments] [--branch_or_tag <branch_or_tag>] [--claude] [--all]")
+    print("Options:")
+    print("  <repo_url>               The URL of the GitHub repository")
+    print("  --lang <language>        The programming language of the repository (choices: go, python, md). Default: python")
+    print("  --keep-comments          Keep comments and docstrings in the source code (only applicable for Python)")
+    print("  --branch_or_tag <branch_or_tag>  The branch or tag of the repository to download. Default: master")
+    print("  --claude                 Format the output for Claude with document tags")
+    print("  --all                    Download all files, including those that are less likely to be useful")
+
 def main():
     root = tk.Tk()
     root.title("GitHub Repo Downloader")
