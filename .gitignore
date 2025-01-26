@@ -10,3 +10,7 @@ pharmaink.git_symfony.txt
 repos
 *.pyc
 *.log
+g2f
+.venv
+__pycache__
+.devcontainer
