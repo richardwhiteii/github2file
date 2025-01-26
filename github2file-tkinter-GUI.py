@@ -53,6 +53,9 @@ def is_likely_useful_file(file_path):
     if 'test' in file_path.lower():
         return False
 
+    if file_path.endswith('.pdf'):
+        return False
+
     for excluded_dir in excluded_dirs:
         if f"/{excluded_dir}/" in file_path or file_path.startswith(excluded_dir + "/"):
             return False

@@ -121,7 +121,7 @@ def is_binary_file(content_sample):
     """
     try:
         content_sample.decode('utf-8')
-        return '\0' in content_sample.decode('utf-8')
+        return '\0' in content_sample.decode('utf-8') or content_sample.endswith(b'.pdf')
     except UnicodeDecodeError:
         return True
     
